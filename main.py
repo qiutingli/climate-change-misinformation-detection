@@ -22,28 +22,14 @@ from keras.models import Sequential
 from keras.layers import Dense, Activation, Dropout, Conv1D, MaxPooling1D, Flatten
 from keras.optimizers import Adam, SGD, rmsprop
 from keras.preprocessing.text import Tokenizer
+from keras.layers import Embedding
+from keras.preprocessing.sequence import pad_sequences
 
 
 class dataLoader():
 
     def __init__(self):
         self.vectorizer = TfidfVectorizer(max_features=50000)
-        self.vec_dict = self.load_glove_vec_dict()
-
-    def load_glove_vec_dict(self):
-        print('Loading Glove pre-trained word vectors ...')
-        vec_dict = {}
-        with open('glove.840B.300d.txt', 'r', encoding='UTF-8') as glove_file:
-            for line in glove_file:
-                try:
-                    split_line = line.split()
-                    word = split_line[0]
-                    embedding = np.array([float(val) for val in split_line[1:]])
-                    vec_dict[word] = embedding
-                except:
-                    pass
-        print('{} Glove word vectors loaded.'.format(len(vec_dict)))
-        return vec_dict
 
     def view_dataset(self, file_name):
         with open('{}.json'.format(file_name)) as file:
@@ -71,21 +57,21 @@ class dataLoader():
         word_vectors = []
         for token in preprocessed_tokens:
             try:
-                word_vectors.append(self.vec_dict[token])
+                word_vectors.append(vec_dict[token])
             except:
-                pass
+                word_vectors.append([0]*200)  # TODO: 300
         return word_vectors
 
     def get_X_train_glove(self):
-        corpus = self.create_corpus()
-        preprocessor = dataPreprocessor()
-        tokenized_texts = preprocessor.preprocess_data(corpus)
+        train_docs = self.create_corpus()
+        preprocessor = DataPreprocessor()
+        tokenized_texts = preprocessor.preprocess_data(train_docs)
         X_train = []
         for tokenized_text in tokenized_texts:
             word_vectors = self.vectorize_text_glove(tokenized_text)
             text_vector = np.sum(word_vectors, 0)
             X_train.append(text_vector)
-        return X_train
+        return np.array(X_train)
 
     def get_X_train(self):
         corpus = self.create_corpus()
@@ -127,14 +113,14 @@ class dataLoader():
             data_json = json.load(file)
             for key in data_json.keys():
                 test_docs.append(data_json[key]['text'])
-        preprocessor = dataPreprocessor()
+        preprocessor = DataPreprocessor()
         tokenized_texts = preprocessor.preprocess_data(test_docs)
         X_test = []
         for tokenized_text in tokenized_texts:
             word_vectors = self.vectorize_text_glove(tokenized_text)
             text_vector = np.sum(word_vectors, 0)
             X_test.append(text_vector)
-        return X_test
+        return np.array(X_test)
 
     def get_X_test(self):
         test_docs = []
@@ -145,9 +131,7 @@ class dataLoader():
         return self.vectorizer.transform(test_docs)
 
 
-
-
-class dataPreprocessor():
+class DataPreprocessor():
 
     def __init__(self):
         pass
@@ -177,7 +161,7 @@ class dataPreprocessor():
         return preprocessed_data
 
 
-class classicModelBuilder():
+class ClassicModelBuilder():
 
     def __init__(self):
         pass
@@ -217,26 +201,40 @@ class textCNN():
     def __init__(self):
         pass
 
-    def process_CNN(self, X_train, y_train, X_test):
-        num_classes = 2
-        verbose, epochs, batch_size = 0, 10, 32
+    def process_CNN_embedding_layer(self):
+        pass
+
+    def process_CNN_vector_mean(self, X_train, y_train, X_test):
+        num_classes = 1
+        verbose, epochs, batch_size = 0, 30, 32
+        print('Building model...')
         model = Sequential()
-        model.add(Conv1D(filters=64, kernel_size=3, activation='relu'))
+        model.add(Conv1D(filters=64, kernel_size=3, padding='causal', activation='relu', input_shape=(None, 200)))
         model.add(Dropout(0.5))
         model.add(MaxPooling1D(pool_size=2))
-        model.add(Flatten())
-        # model.add(Dense(256, activation='relu', input_dim=200))
+        # model.add(Flatten())
+        model.add(Dense(256, activation='relu', input_dim=200))
         model.add(Dense(num_classes, activation='softmax'))
         model.compile(optimizer='adam',
                       loss='binary_crossentropy',
                       metrics=['accuracy'])
-
+        print("Fitting model... ")
         model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size)
         score = model.evaluate(X_train, y_train, batch_size=32)
         print(score)
         y_test_pred = model.predict_classes(X_test)
         print('prediction: ', y_test_pred)
         return y_test_pred
+
+
+def generate_dev_output(y_dev):
+    with open('dev-baseline-r.json') as file:
+        data_json = json.load(file)
+        for index, key in enumerate(data_json.keys()):
+            data_json[key]['label'] = int(y_dev[index])
+    with open('dev-baseline-r.json', 'w') as file:
+        json.dump(data_json, file)
+    print('Development output generated')
 
 
 def generate_output(y_test):
@@ -249,16 +247,108 @@ def generate_output(y_test):
     print('Output generated')
 
 
+def load_glove_vec_dict():
+    print('Loading Glove pre-trained word vectors ...')
+    vec_dict = {}
+    with open('glove.twitter.27B.200d.txt', 'r', encoding='UTF-8') as glove_file:
+        for line in glove_file:
+            try:
+                split_line = line.split()
+                word = split_line[0]
+                embedding = np.array([float(val) for val in split_line[1:]])
+                vec_dict[word] = embedding
+            except:
+                pass
+    print('{} Glove word vectors loaded.'.format(len(vec_dict)))
+    return vec_dict
+
+
 if __name__ == '__main__':
     data_loader = dataLoader()
-    X_train = data_loader.get_X_train_glove()
-    y_train = data_loader.get_y_train()
-    # X_dev = data_loader.get_X_dev()
-    # y_dev = data_loader.get_y_dev()
-    X_test = data_loader.get_X_test_glove()
-    text_cnn = textCNN()
-    y_test_pred = text_cnn.process_CNN(X_train, y_train, X_test)
+    dev_docs = []
+    with open('dev.json') as file:
+        data_json = json.load(file)
+        for key in data_json.keys():
+            dev_docs.append(data_json[key]['text'])
+    docs = dev_docs  # TODO: Change back
+    # docs = data_loader.create_corpus()
+    # define class labels
+
+    y_train = data_loader.get_y_dev()  # TODO: Change back
+    # y_train = data_loader.get_y_train()
+    print(y_train)
+    # IMPORTANT
+    y_train = keras.utils.to_categorical(y_train, num_classes=2)
+    print(y_train)
+    # prepare tokenizer
+    t = Tokenizer()
+    t.fit_on_texts(docs)
+    vocab_size = len(t.word_index) + 1
+    # integer encode the documents
+    encoded_docs = t.texts_to_sequences(docs)
+    print(encoded_docs)
+    # pad documents to a max length of 100 words
+    max_length = 100
+    X_train = pad_sequences(encoded_docs, maxlen=max_length, padding='post')
+    print(X_train)
+
+    vec_dict = load_glove_vec_dict()
+    glove_vec_dim = 200
+    # create a weight matrix for words in training docs
+    embedding_matrix = np.zeros((vocab_size, glove_vec_dim))
+    for word, i in t.word_index.items():
+        embedding_vector = vec_dict.get(word)
+        if embedding_vector is not None:
+            embedding_matrix[i] = embedding_vector
+    print('Building model...')
+    model = Sequential()
+    e = Embedding(vocab_size, glove_vec_dim, weights=[embedding_matrix], input_length=max_length, trainable=False)
+    model.add(e)
+    model.add(Conv1D(filters=64, kernel_size=2, padding='valid', activation='relu'))
+    model.add(Dropout(0.2))
+    model.add(MaxPooling1D(pool_size=2))
+    model.add(Flatten())
+    model.add(Dense(256, activation='relu'))
+    model.add(Dense(2, activation='softmax'))
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    print(model.summary())
+    # fit the model
+    print("Fitting model... ")
+    model.fit(X_train, y_train, epochs=10, batch_size=32)
+    # evaluate the model
+    loss, accuracy = model.evaluate(X_train, y_train, verbose=0)
+    print('Accuracy: %f' % (accuracy * 100))
+    test_docs = []
+    with open('test-unlabelled.json') as file:
+        data_json = json.load(file)
+        for key in data_json.keys():
+            test_docs.append(data_json[key]['text'])
+    encoded_test_docs = t.texts_to_sequences(test_docs)
+    X_test = pad_sequences(encoded_test_docs, maxlen=max_length, padding='post')
+    y_test_pred = model.predict_classes(X_test)
+    print('predictions: ', y_test_pred)
     generate_output(y_test_pred)
+
+    dev_docs = []
+    with open('dev.json') as file:
+        data_json = json.load(file)
+        for key in data_json.keys():
+            dev_docs.append(data_json[key]['text'])
+    encoded_dev_docs = t.texts_to_sequences(test_docs)
+    X_dev = pad_sequences(encoded_dev_docs, maxlen=max_length, padding='post')
+    y_dev_pred = model.predict_classes(X_dev)
+    generate_dev_output(y_dev_pred)
+
+
+    # X_train = data_loader.get_X_train_glove()
+    # y_train = data_loader.get_y_train()
+    # # X_dev = data_loader.get_X_dev()
+    # # y_dev = data_loader.get_y_dev()
+    # X_test = data_loader.get_X_test_glove()
+    # print(X_train.shape, y_train.shape, X_test.shape)
+    # text_cnn = textCNN()
+    # y_test_pred = text_cnn.process_CNN_vector_mean(X_train, y_train, X_test)
+    # generate_output(y_test_pred)
 
     # model_builder = classicModelBuilder()
     # y_dev_pred = model_builder.process_naive_bayes(X_train, y_train, X_dev)
@@ -278,10 +368,3 @@ if __name__ == '__main__':
     # print(vectorized_data)
     # vectorizer = CountVectorizer()
     # X = vectorizer.fit_transform(corpus)
-
-
-
-
-
-
-
