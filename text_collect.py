@@ -111,16 +111,10 @@ def get_text_from_txt():
     with open('train-external-bbc-2.json', 'a') as file:
         json.dump(docs, file)
 
-
-if __name__ == '__main__':
-    # get_text_from_local_html()
-    # get_text_from_html()
-    # get_text_from_csv()
-    # get_text_from_txt()
+def collect_truth(input_file, output_file):
     counter = 0
     docs = {}
-    file_path = 'train-external-cnn.txt'
-    with open(file_path) as file:
+    with open(input_file) as file:
         for index, line in enumerate(file):
             if line.strip():
                 doc_key = 'train-{}'.format(counter)
@@ -128,8 +122,38 @@ if __name__ == '__main__':
                 docs[doc_key]['text'] = line
                 docs[doc_key]['label'] = 0
                 counter += 1
-    with open('train-external-papers.json', 'w') as file:
+    with open(output_file, 'w') as file:
         json.dump(docs, file)
+
+
+def collect_misinfo(input_file, output_file):
+    counter = 0
+    docs = {}
+    with open(input_file, encoding="utf-8") as file:
+        for index, line in enumerate(file):
+            if line.strip():
+                doc_key = 'train-{}'.format(counter)
+                docs[doc_key] = {}
+                docs[doc_key]['text'] = line
+                docs[doc_key]['label'] = 1
+                counter += 1
+    with open(output_file, 'w', encoding="utf-8") as file:
+        json.dump(docs, file)
+
+
+if __name__ == '__main__':
+    # get_text_from_local_html()
+    # get_text_from_html()
+    # get_text_from_csv()
+    # get_text_from_txt()
+
+    input_file_truth = 'train-external-skeptical-truth.txt'
+    output_file_truth = 'train-external-skeptical-truth.json'
+    collect_truth(input_file_truth, output_file_truth)
+
+    input_file_misinfo = 'train-external-skeptical-misinfo.txt'
+    output_file_misinfo = 'train-external-skeptical-misinfo.json'
+    collect_misinfo(input_file_misinfo, output_file_misinfo)
 
 
 
